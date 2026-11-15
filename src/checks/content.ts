@@ -105,7 +105,13 @@ export function contentChecks(site: SiteConfig, p: PageData): CheckResult[] {
   else if (unknownTel.length) add('tel-links', 'warn', 'Phone numbers not in your allowed list', [...new Set(unknownTel)]);
   else if (tels.length) add('tel-links', 'pass', `${new Set(tels).size} tel: link(s) OK`);
 
-  const badMail = p.links.filter((l) => l.startsWith('mailto:') && !/^mailto:[^@\s]+@[^@\s]+\.\w+/i.test(decodeURIComponent(l)));
+  // "mailto:?subject=…" (share-by-email buttons) has no recipient on purpose; only check links that name one.
+  const badMail = p.links.filter((l) => {
+    if (!l.startsWith('mailto:') || l.startsWith('mailto:?')) return false;
+    let addr = l;
+    try { addr = decodeURIComponent(l); } catch { /* keep raw */ }
+    return !/^mailto:[^@\s?]+@[^@\s?]+\.\w+/i.test(addr);
+  });
   if (badMail.length) add('mailto-links', 'fail', 'Malformed mailto: links', badMail);
 
   return out;

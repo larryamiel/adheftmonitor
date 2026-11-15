@@ -2,7 +2,11 @@ import * as cheerio from 'cheerio';
 import type { CheckResult, PageData, SiteConfig } from '../types.js';
 import { fetchWithTimeout, result, truncate } from '../util.js';
 
-export function seoPageChecks(site: SiteConfig, p: PageData): CheckResult[] {
+/**
+ * `mustIndex`: the page is the home page, a key page, or listed in the sitemap. noindex there contradicts
+ * itself and is a real SEO bug; elsewhere (archives, utility pages) it's usually intentional.
+ */
+export function seoPageChecks(site: SiteConfig, p: PageData, mustIndex = true): CheckResult[] {
   const out: CheckResult[] = [];
   const $ = cheerio.load(p.html);
   const add = (id: string, status: CheckResult['status'], msg: string, details?: string[]) =>
@@ -13,7 +17,9 @@ export function seoPageChecks(site: SiteConfig, p: PageData): CheckResult[] {
   const xRobots = p.headers['x-robots-tag'] ?? '';
   const noindex = /noindex/i.test(robotsMeta) || /noindex/i.test(xRobots);
   const allowed = site.allowNoindex?.some((a) => p.path === a || p.path.startsWith(a + '/'));
-  if (noindex) add('noindex', allowed ? 'info' : 'fail', `Page is noindex (${robotsMeta || 'X-Robots-Tag: ' + xRobots})`);
+  const how = robotsMeta || 'X-Robots-Tag: ' + xRobots;
+  if (noindex && !allowed && mustIndex) add('noindex', 'fail', `Page is noindex but should be indexed (home, key page or in sitemap): ${how}`);
+  else if (noindex) add('noindex', 'info', `Page is noindex (not in sitemap, likely intentional): ${how}`);
   else add('noindex', 'pass', 'Indexable');
 
   const title = $('head title').first().text().trim();

@@ -33,6 +33,15 @@ export interface RunOptions {
   onProgress?: (msg: string) => void;
 }
 
+/**
+ * Never crawled: CMS system pages and archive listings that aren't real content
+ * (WordPress date archives, login/admin, feeds, pagination, author archives).
+ */
+const DEFAULT_EXCLUDE = /^\/(wp-login\.php|wp-admin|wp-json|xmlrpc\.php|cgi-bin)|\/feed\/?$|^\/\d{4}\/(\d{2}\/)?(\d{2}\/)?$|\/page\/\d+\/?$|^\/author\//;
+
+/** "/contact-us/" and "/contact-us" are the same page for key-page matching. */
+const samePath = (p: string) => p.replace(/\/+$/, '') || '/';
+
 /** Safety limit so a crawl trap (calendar, faceted search) can't run forever. */
 const HARD_CAP = 5000;
 
@@ -50,6 +59,7 @@ function normalize(site: SiteConfig, raw: string): string | null {
     if (!site.crawl?.includeQuery) u.search = '';
     if (SKIP_EXT.test(u.pathname)) return null;
     const pathAndQuery = u.pathname + u.search;
+    if (DEFAULT_EXCLUDE.test(u.pathname)) return null;
     if ((site.crawl?.exclude ?? []).some((r) => new RegExp(r).test(pathAndQuery))) return null;
     return u.href;
   } catch {
@@ -85,11 +95,12 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
     enqueue(p);
   }
   if (!manual && (site.crawl?.sitemap ?? true)) robots.sitemapUrls.forEach(enqueue);
+  const sitemapPaths = new Set(robots.sitemapUrls.map((u) => { try { return samePath(new URL(u).pathname); } catch { return ''; } }));
 
   // Key pages get screenshots + PageSpeed. For a manual --pages check, the pages you changed are the key pages.
   const keyPaths = new Set(
     (manual ? opts.pages! : site.keyPages ?? ['/', ...(site.pages ?? [])])
-      .map((p) => normalize(site, p)).filter((u): u is string => !!u).map((u) => new URL(u).pathname),
+      .map((p) => normalize(site, p)).filter((u): u is string => !!u).map((u) => samePath(new URL(u).pathname)),
   );
   const store = opts.store ?? defaultStore();
   const psi = (opts.psi ?? !!process.env.PSI_API_KEY) ? pageSpeedChecks(site, [...keyPaths]) : Promise.resolve([]);
@@ -105,7 +116,7 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
       while (active < concurrency && queue.length) {
         const url = queue.shift()!;
         active++;
-        const isKey = keyPaths.has(new URL(url).pathname);
+        const isKey = keyPaths.has(samePath(new URL(url).pathname));
         loadPage(browser, site, url, {
           responsive: opts.responsive ?? true,
           a11y: opts.a11y ?? true,
@@ -121,7 +132,8 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
             results.push(...healthPageChecks(pd));
             if (!pd.error) {
               results.push(
-                ...seoPageChecks(site, pd), ...contentChecks(site, pd), ...errorChecks(site, pd),
+                ...seoPageChecks(site, pd, pd.path === '/' || keyPaths.has(samePath(pd.path)) || sitemapPaths.has(samePath(pd.path)) || !robots.sitemapUrls.length),
+                ...contentChecks(site, pd), ...errorChecks(site, pd),
                 ...responsivePageCheck(pd), ...a11yPageCheck(pd), ...weightPageCheck(pd),
               );
               if (pd.screenshots.length) results.push(...(await visualChecks(site, pd, store, !!opts.approve)));
