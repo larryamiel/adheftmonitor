@@ -12,6 +12,25 @@ const WEB_WORDS = [
   'google', 'iphone', 'android', 'smartphone', 'startup', 'startups', 'livestream', 'unsubscribe', 'opt', 'hvac',
   'integrations', 'automations', 'workflows', 'chatbot', 'chatbots', 'plugin', 'plugins', 'signups', 'logins',
   'omnichannel', 'reschedule', 'rebrand', 'onsite', 'offsite', 'telehealth', 'walkthrough', 'roofing', 'subcontractor',
+  // Veterinary
+  'spay', 'spayed', 'spaying', 'neuter', 'neutered', 'neutering', 'microchip', 'microchipped', 'microchipping',
+  'heartworm', 'heartworms', 'deworming', 'dewormer', 'parvovirus', 'parvo', 'distemper', 'leptospirosis', 'lepto',
+  'bordetella', 'giardia', 'lyme', 'xylitol', 'cruciate', 'ccl', 'tplo', 'luxating', 'patella', 'otitis', 'pyometra',
+  'euthanasia', 'boarding', 'groomer', 'grooming', 'vet', 'vets', 'veterinarian', 'veterinarians', 'dvm', 'vmd',
+  'exotics', 'avian', 'feline', 'felines', 'canine', 'canines', 'kitten', 'kittens', 'puppyhood', 'senior',
+  'radiograph', 'radiographs', 'radiology', 'ultrasound', 'cytology', 'urinalysis', 'bloodwork', 'diagnostics',
+  'dermatology', 'ophthalmology', 'oncology', 'cardiology', 'orthopedic', 'orthopedics', 'laser', 'laparoscopic',
+  'fecal', 'flea', 'fleas', 'tick', 'ticks', 'anesthesia', 'anesthetic', 'sedation', 'telemedicine', 'wellness',
+  'fear', 'fearfree', 'carecredit', 'scratchpay', 'petcare', 'pawsome', 'furbaby', 'furbabies', 'fur', 'furry',
+  // Dental
+  'periodontal', 'periodontics', 'periodontist', 'gingivitis', 'invisalign', 'endodontic', 'endodontics',
+  'orthodontic', 'orthodontics', 'orthodontist', 'prosthodontics', 'veneers', 'implant', 'implants', 'hygienist',
+  'fluoride', 'dentures', 'denture', 'bruxism', 'tmj', 'tmd', 'teeth', 'whitening', 'cosmetic', 'pediatric',
+  'extraction', 'extractions', 'sedation', 'crowns', 'bonding', 'sealant', 'sealants', 'retainer', 'retainers',
+  'zirconia', 'cerec', 'cbct', 'dds', 'dmd', 'aligners', 'overbite', 'underbite', 'molar', 'molars', 'tartar',
+  // Accounting
+  'cpa', 'cpas', 'bookkeeping', 'payroll', 'irs', 'llc', 'llcs', 'quickbooks', 'deductible', 'deductibles',
+  'fiduciary', 'audit', 'audits', 'accrual', 'amortization', 'depreciation', 'filers', 'nonprofit', 'nonprofits',
 ];
 
 let speller: ReturnType<typeof nspell> | undefined;
@@ -112,7 +131,11 @@ export function contentChecks(site: SiteConfig, p: PageData): CheckResult[] {
     try { addr = decodeURIComponent(l); } catch { /* keep raw */ }
     return !/^mailto:[^@\s?]+@[^@\s?]+\.\w+/i.test(addr);
   });
-  if (badMail.length) add('mailto-links', 'fail', 'Malformed mailto: links', badMail);
+  // "mailto: name@x.com" (stray space) works in most mail apps: worth fixing, not a failure.
+  const spaced = badMail.filter((l) => { try { return /^mailto:\s+[^@\s?]+@[^@\s?]+\.\w+/i.test(decodeURIComponent(l)); } catch { return false; } });
+  const broken = badMail.filter((l) => !spaced.includes(l));
+  if (broken.length) add('mailto-links', 'fail', 'Malformed mailto: links', broken);
+  else if (spaced.length) add('mailto-links', 'warn', 'mailto: link has a stray space before the address', spaced);
 
   return out;
 }

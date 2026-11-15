@@ -5,7 +5,7 @@ import { loadConfig } from './config.js';
 import { launchBrowser } from './browser.js';
 import { runSite } from './runner.js';
 import { diffReports, printDiff, printReport, saveReport, type Diff } from './report.js';
-import { dbConfigured, failRun, finishRun, loadSitesFromDb, previousReport, startRun, type RunKind } from './db.js';
+import { adoptTracking, dbConfigured, failRun, finishRun, loadSitesFromDb, previousReport, startRun, type RunKind } from './db.js';
 import { sendAlert } from './alerts.js';
 import type { SiteConfig, SiteReport } from './types.js';
 
@@ -106,6 +106,11 @@ async function main() {
         if (!PRIVATE) printDiff(diff, prev);
       }
       if (runId) await finishRun(runId, report, diff);
+      // First run of a site with no tracking configured: save what it uses now as the expected setup.
+      if (runId && kind !== 'manual' && report.detectedTracking) {
+        const saved = await adoptTracking(site.id!, report.detectedTracking);
+        if (saved) console.log(PRIVATE ? `${label}: saved ${saved.length} tracking ID(s) as expected` : `Saved expected tracking: ${saved.join(', ')}`);
+      }
       // Manual (--pages) runs don't alert: they're for checking your own change.
       if (kind !== 'manual') await sendAlert(report, diff, runUrl);
       const fails = report.results.filter((r) => r.status === 'fail').length;

@@ -63,6 +63,8 @@ export interface SiteConfig {
     exclude?: string[];
   };
   tracking?: TrackingConfig;
+  /** Set when tracking IDs were auto-saved from a run (ISO date). */
+  trackingAdoptedAt?: string;
   /** Click this selector (cookie banner "Accept") before checking tracking. */
   consentSelector?: string;
   content?: {
@@ -154,6 +156,14 @@ export interface PageData {
   axe: AxeViolation[];
   axeError?: string;
   screenshots: Screenshot[];
+  /** Resources the host refused with 429 (rate limiting the monitor). Excluded from error checks. */
+  rateLimited: string[];
+  /** Page asks not to be indexed (meta robots or X-Robots-Tag). */
+  noindex: boolean;
+  /** Absolute canonical URL declared by the page (empty if none). */
+  canonical: string;
+  /** x-powered-by / server header, e.g. "WP Engine". */
+  host: string;
   /** Transferred bytes by resource type (from content-length; approximate). */
   weight: { total: number; byType: Record<string, number>; largeImages: { url: string; bytes: number }[] };
 }
@@ -166,6 +176,8 @@ export interface SiteReport {
   pages: string[];
   results: CheckResult[];
   scores: Record<Category | 'overall', number>;
+  /** Tag IDs found on most pages (used to auto-save tracking on a site's first run). */
+  detectedTracking?: import('./checks/tracking.js').DetectedTracking;
   /** Average layout score per screen width across all pages, e.g. {"320": 81, "1920": 100}. */
   viewportScores?: Record<string, number>;
 }

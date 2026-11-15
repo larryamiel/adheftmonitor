@@ -7,9 +7,16 @@ const kb = (b: number) => `${Math.round(b / 1024)} KB`;
 
 export function weightPageCheck(p: PageData): CheckResult[] {
   const out: CheckResult[] = [];
-  const { total, byType, largeImages } = p.weight;
+  const { byType, largeImages } = p.weight;
   const breakdown = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([t, b]) => `${t}: ${kb(b)}`);
+  // Video/audio streams are reported on their own: a background video shouldn't make the page "fail".
+  const media = byType.media ?? 0;
+  const total = p.weight.total - media;
   const mb = (total / MB).toFixed(1);
+  if (media > 5 * MB) {
+    out.push(result('performance', 'video-weight', 'warn',
+      `Video/audio downloads ${(media / MB).toFixed(1)} MB on load (heavy on mobile data; consider a poster image or preload="none")`, p.path));
+  }
   out.push(total > 10 * MB
     ? result('performance', 'weight', 'fail', `Page weight ${mb} MB (aim < 3 MB)`, p.path, breakdown)
     : total > 5 * MB

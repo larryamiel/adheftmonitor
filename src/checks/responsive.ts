@@ -37,7 +37,9 @@ export function auditLayoutInPage(mobileMax: number): Omit<LayoutAudit, 'width' 
     return `${pName} > ${self}`;
   };
   const shown = (el: Element, r: DOMRect) => {
-    if (r.width < 1 || r.height < 1) return false;
+    // ≤ 2px = visually hidden on purpose (skip links, screen-reader-only text), not a layout bug.
+    if (r.width <= 2 || r.height <= 2) return false;
+    if (el.closest('.screen-reader-text, .sr-only, .visually-hidden, .skip-link, [class*="skip-to"]')) return false;
     const cs = getComputedStyle(el);
     return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05;
   };
@@ -133,10 +135,15 @@ export function auditLayoutInPage(mobileMax: number): Omit<LayoutAudit, 'width' 
   // 5. Screen area covered by fixed/sticky overlays at the top of the page.
   let covered = 0;
   for (const el of all) {
-    const pos = getComputedStyle(el).position;
-    if (pos !== 'fixed' && pos !== 'sticky') continue;
+    const cs = getComputedStyle(el);
+    if (cs.position !== 'fixed' && cs.position !== 'sticky') continue;
     const r = el.getBoundingClientRect();
     if (!shown(el, r)) continue;
+    // Invisible full-screen wrappers (transparent, no image, click-through) don't cover anything.
+    if (cs.pointerEvents === 'none') continue;
+    const transparent = /rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor) && cs.backgroundImage === 'none';
+    if (transparent && !(el.textContent ?? '').trim() && !el.querySelector('img,video,iframe,svg')) continue;
+    if (transparent && r.width * r.height > vw * vh * 0.9) continue; // transparent full-screen container
     const w = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
     const h = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
     covered += w * h;

@@ -109,10 +109,39 @@ export function trackingChecks(site: SiteConfig, pages: PageData[]): CheckResult
     found.meta.length && `Meta: ${found.meta.join(', ')}`,
     found.callrail.length && `CallRail: ${found.callrail.join(', ')}`,
   ].filter(Boolean) as string[];
-  const configured = !!(t.gtm || t.ga4 || t.metaPixel || t.callrail || t.custom);
-  out.push(result('tracking', 'detected', configured ? 'info' : 'warn',
-    configured ? 'Detected tags' : 'No expected tags configured; add these to sites.config.ts to enforce them',
+  const configured = hasTrackingConfig(site);
+  out.push(result('tracking', 'detected', 'info',
+    configured ? 'Detected tags' : 'Detected tags (saved as the expected tags after this run; enforced from the next run)',
     undefined, summary.length ? summary : ['No known tags detected']));
 
   return out;
 }
+
+export interface DetectedTracking { gtm: string[]; ga4: string[]; metaPixel: string[]; callrailCompanyId?: string }
+
+/**
+ * Tag IDs present on at least half of the checked pages (a stray test tag on one page isn't adopted).
+ * Used to auto-save a site's tracking setup on its first run.
+ */
+export function detectTracking(pages: PageData[]): DetectedTracking {
+  const ok = pages.filter((p) => !p.error);
+  const det = ok.map(detect);
+  const need = Math.max(1, Math.ceil(ok.length / 2));
+  const common = (pick: (d: Detected) => Iterable<string>) => {
+    const n = new Map<string, number>();
+    for (const d of det) for (const id of new Set(pick(d))) n.set(id, (n.get(id) ?? 0) + 1);
+    return [...n.entries()].filter(([, c]) => c >= need).map(([id]) => id).sort();
+  };
+  const callrail = common((d) => d.callrail);
+  return {
+    gtm: common((d) => d.gtm),
+    ga4: common((d) => [...d.ga4Hit, ...d.ga4Loaded]),
+    metaPixel: common((d) => [...d.metaPageView, ...d.metaLoaded]),
+    callrailCompanyId: callrail[0],
+  };
+}
+
+export const hasTrackingConfig = (site: SiteConfig) => {
+  const t = site.tracking;
+  return !!(t && (t.gtm?.length || t.ga4?.length || t.metaPixel?.length || t.callrail || t.custom?.length));
+};

@@ -3,7 +3,7 @@ import type { Category, CheckResult, PageData, SiteConfig, SiteReport } from './
 import { loadPage } from './browser.js';
 import { healthPageChecks, healthSiteChecks } from './checks/health.js';
 import { robotsAndSitemap, seoCrossPageChecks, seoPageChecks } from './checks/seo.js';
-import { trackingChecks } from './checks/tracking.js';
+import { detectTracking, trackingChecks } from './checks/tracking.js';
 import { contentChecks } from './checks/content.js';
 import { errorChecks } from './checks/errors.js';
 import { securityChecks } from './checks/security.js';
@@ -37,7 +37,13 @@ export interface RunOptions {
  * Never crawled: CMS system pages and archive listings that aren't real content
  * (WordPress date archives, login/admin, feeds, pagination, author archives).
  */
-const DEFAULT_EXCLUDE = /^\/(wp-login\.php|wp-admin|wp-json|xmlrpc\.php|cgi-bin)|\/feed\/?$|^\/\d{4}\/(\d{2}\/)?(\d{2}\/)?$|\/page\/\d+\/?$|^\/author\//;
+const DEFAULT_EXCLUDE = new RegExp([
+  String.raw`^/(wp-login\.php|wp-admin|wp-json|wp-content|wp-includes|xmlrpc\.php|cgi-bin)`,
+  String.raw`/feed/?$`, String.raw`^/\d{4}/(\d{2}/)?(\d{2}/)?$`, String.raw`/page/\d+/?$`, String.raw`^/author/`,
+  String.raw`/attachment/`,
+  // Page-builder/theme template libraries that leak into sitemaps (Avada/Fusion, Elementor, Divi, Beaver).
+  String.raw`^/(element_category|fusion_tb_category|fusion_tb_section|fusion_element|fusion_template|fusion_form|elementor_library|e-landing-page|et_pb_layout|layout_category|fl-builder-template)/`,
+].join('|'));
 
 /** "/contact-us/" and "/contact-us" are the same page for key-page matching. */
 const samePath = (p: string) => p.replace(/\/+$/, '') || '/';
@@ -109,7 +115,20 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
   const skipped: string[] = [];
   let active = 0;
   let done = 0;
-  const concurrency = opts.concurrency ?? site.crawl?.concurrency ?? 4;
+  // Adaptive politeness: WP Engine (and anything that answers 429) throttles fast crawlers, which
+  // otherwise shows up as fake "broken images" and "failed requests". Back off instead.
+  let concurrency = opts.concurrency ?? site.crawl?.concurrency ?? 4;
+  let paceMs = 0;
+  let lastStart = 0;
+  let throttledRequests = 0;
+  let throttledPages = 0;
+  let hostName = '';
+  const startLoad = async (url: string, o: Parameters<typeof loadPage>[3]) => {
+    const wait = Math.max(0, lastStart + paceMs - Date.now());
+    lastStart = Date.now() + wait;
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    return loadPage(browser, site, url, o);
+  };
   await new Promise<void>((resolve) => {
     const next = () => {
       if (queue.length === 0 && active === 0) return resolve();
@@ -117,7 +136,7 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
         const url = queue.shift()!;
         active++;
         const isKey = keyPaths.has(samePath(new URL(url).pathname));
-        loadPage(browser, site, url, {
+        startLoad(url, {
           responsive: opts.responsive ?? true,
           a11y: opts.a11y ?? true,
           screenshots: isKey && (opts.visual ?? true),
@@ -126,6 +145,14 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
           .then(async (pd) => {
             done++;
             log(`page ${done}/${seen.size}: ${pd.path}`);
+            if (pd.host && !hostName) hostName = pd.host;
+            if (/wp ?engine/i.test(pd.host) && !site.crawl?.concurrency && concurrency > 2) { concurrency = 2; paceMs = Math.max(paceMs, 500); }
+            if (pd.rateLimited.length) {
+              throttledRequests += pd.rateLimited.length;
+              throttledPages++;
+              concurrency = 1;
+              paceMs = Math.min(8000, Math.max(2000, paceMs * 2));
+            }
             if (pd.skipped) { skipped.push(`${pd.path} (${pd.skipped})`); return; }
             if (followLinks) pd.links.forEach(enqueue);
             // Check the page now, then release the heavy fields so full-site crawls stay light on memory.
@@ -156,7 +183,14 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
 
   const ok = pages.filter((p) => !p.error);
   if (!ok.length) results.push({ id: 'health.no-pages', category: 'health', status: 'fail', message: 'No pages could be loaded' });
-  results.push(...seoCrossPageChecks(ok), ...trackingChecks(site, ok));
+  if (throttledRequests) {
+    results.push({ id: 'health.rate-limited', category: 'health', status: 'info',
+      message: `Host rate-limited the monitor on ${throttledRequests} request(s) across ${throttledPages} page(s); those files were not counted as broken and the crawl slowed down automatically`,
+      details: hostName ? [`Host: ${hostName}`] : undefined });
+  }
+  // Duplicate titles/descriptions only matter for pages search engines index.
+  results.push(...seoCrossPageChecks(ok.filter((p) => !p.noindex)), ...trackingChecks(site, ok));
+  filterSiteWideSpelling(results);
   const home = ok.find((p) => p.path === '/') ?? ok[0];
   if (home) results.push(...securityChecks(home));
 
@@ -195,6 +229,7 @@ export async function runSite(browser: Browser, site: SiteConfig, opts: RunOptio
     results,
     scores,
     viewportScores,
+    detectedTracking: detectTracking(ok),
   };
 }
 
@@ -220,4 +255,21 @@ export const CATEGORIES: Category[] = [
 function overallOf(scores: SiteReport['scores']): number {
   const used = CATEGORIES.map((c) => scores[c]).filter((n) => n >= 0);
   return used.length ? Math.round(used.reduce((a, b) => a + b, 0) / used.length) : 0;
+}
+
+/**
+ * A real typo is rare and local. A "misspelling" that appears on 3+ pages of the same site is almost always a
+ * name, place or industry term (e.g. "xylitol", "Fullerton"), so drop it from every page's spelling result.
+ */
+function filterSiteWideSpelling(results: CheckResult[]) {
+  const spelling = results.filter((r) => r.id === 'content.spelling' && r.status === 'warn' && r.details);
+  const word = (d: string) => d.split(/[ ×→]/)[0].toLowerCase();
+  const pagesPerWord = new Map<string, number>();
+  for (const r of spelling) for (const w of new Set(r.details!.map(word))) pagesPerWord.set(w, (pagesPerWord.get(w) ?? 0) + 1);
+  for (const r of spelling) {
+    const kept = r.details!.filter((d) => (pagesPerWord.get(word(d)) ?? 0) < 3);
+    if (kept.length === r.details!.length) continue;
+    if (!kept.length) { r.status = 'pass'; r.message = 'No spelling issues'; r.details = undefined; }
+    else { r.message = `${kept.length} possible misspelling(s)`; r.details = kept; }
+  }
 }

@@ -3,6 +3,12 @@ import type { CheckResult, PageData, SiteConfig } from '../types.js';
 import { fetchWithTimeout, result, truncate } from '../util.js';
 
 const MAX_LINKS = 5000;
+/**
+ * Never probed: social profiles and share/intent links. These sites block automated requests (403/429/999)
+ * on every run, so checking them only produces noise.
+ */
+const SKIP_PROBE = /^https?:\/\/([\w-]+\.)?(facebook\.com|fb\.com|instagram\.com|linkedin\.com|twitter\.com|x\.com|tiktok\.com|pinterest\.com|threads\.net|yelp\.com|nextdoor\.com)\b|\/(sharer|share|intent)(\/|\.php|\?|$)|[?&](share|url)=http/i;
+
 /** Statuses that usually mean "bot blocked", not "broken". */
 const BOT_BLOCKED = new Set([401, 403, 405, 429, 999]);
 
@@ -32,7 +38,7 @@ export async function linkChecks(site: SiteConfig, pages: PageData[]): Promise<C
     for (const l of p.links) {
       if (!/^https?:/i.test(l)) continue;
       const u = stripHash(l);
-      if (ignore.some((r) => r.test(u))) continue;
+      if (ignore.some((r) => r.test(u)) || SKIP_PROBE.test(u)) continue;
       const internal = new URL(u).hostname.replace(/^www\./, '') === base.hostname.replace(/^www\./, '');
       if (!internal && !checkExternal) continue;
       if (!sources.has(u)) sources.set(u, new Set());

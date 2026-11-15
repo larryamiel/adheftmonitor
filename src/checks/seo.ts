@@ -88,9 +88,17 @@ export function seoPageChecks(site: SiteConfig, p: PageData, mustIndex = true): 
 export function seoCrossPageChecks(pages: PageData[]): CheckResult[] {
   const out: CheckResult[] = [];
   for (const [id, field] of [['duplicate-titles', 'title'], ['duplicate-descriptions', 'description']] as const) {
-    const map = new Map<string, string[]>();
-    for (const p of pages) if (p[field]) map.set(p[field], [...(map.get(p[field]) ?? []), p.path]);
-    const dups = [...map.entries()].filter(([, ps]) => ps.length > 1);
+    // URL variants of one page (/a vs /a/, /Raleigh vs /raleigh) that declare the same canonical are
+    // one page to search engines, so count each canonical once.
+    const map = new Map<string, Map<string, string>>();
+    for (const p of pages) {
+      if (!p[field]) continue;
+      const key = (p.canonical || p.url).replace(/\/+$/, '').toLowerCase();
+      const m = map.get(p[field]) ?? new Map<string, string>();
+      if (!m.has(key)) m.set(key, p.path);
+      map.set(p[field], m);
+    }
+    const dups = [...map.entries()].map(([v, m]) => [v, [...m.values()]] as const).filter(([, ps]) => ps.length > 1);
     out.push(
       dups.length
         ? result('seo', id, 'warn', `${dups.length} duplicated value(s) across pages`, undefined,

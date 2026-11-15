@@ -44,7 +44,13 @@ export function SiteForm({ site }: { site?: SiteRow }) {
 
       <fieldset>
         <legend>Tracking codes</legend>
-        <p className="muted small" style={{ marginTop: 0 }}>Leave empty on the first run: the report lists every tag it detects so you can copy the IDs here. Once set, a missing <em>or wrong</em> ID fails.</p>
+        {c.trackingAdoptedAt ? (
+          <div className="alert alert-info small" style={{ marginBottom: 12 }}>
+            These IDs were <strong>auto-detected</strong> on {new Date(c.trackingAdoptedAt).toLocaleDateString()} from the tags found on most pages.
+            Review them and save to confirm.
+          </div>
+        ) : null}
+        <p className="muted small" style={{ marginTop: 0 }}>Leave empty and the first run saves the tags it finds on most pages. Once set, a missing <em>or wrong</em> ID fails.</p>
         <div className="form-grid">
           <label className="field">GTM container IDs<input type="text" name="gtm" defaultValue={(t.gtm ?? []).join(', ')} placeholder="GTM-ABC1234" /></label>
           <label className="field">GA4 measurement IDs<input type="text" name="ga4" defaultValue={(t.ga4 ?? []).join(', ')} placeholder="G-XXXXXXXXXX" /></label>

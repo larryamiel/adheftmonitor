@@ -70,6 +70,7 @@ export async function loadPage(browser: Browser, site: SiteConfig, url: string, 
     requests: [], beacons: [], consoleErrors: [], pageErrors: [], failedRequests: [],
     brokenImages: [], links: [], hasDataLayer: false, gtmInHtml: [], title: '', description: '',
     layout: [], axe: [], screenshots: [], weight: { total: 0, byType: {}, largeImages: [] },
+    rateLimited: [], noindex: false, host: '', canonical: '',
   };
   let measuringWeight = true;
 
@@ -92,12 +93,21 @@ export async function loadPage(browser: Browser, site: SiteConfig, url: string, 
   page.on('requestfailed', (r) => {
     const err = r.failure()?.errorText ?? 'failed';
     if (err.includes('ERR_ABORTED')) return; // navigations / cancelled media, not real breakage
+    // ORB = Chromium silently blocking an opaque cross-origin response (e.g. Meta Pixel's own error logger).
+    // Not visible to visitors and not fixable by the site owner.
+    if (err.includes('ERR_BLOCKED_BY_ORB')) return;
     data.failedRequests.push({ url: r.url(), status: err, resourceType: r.resourceType() });
   });
   page.on('response', (r) => {
     const req = r.request();
     // The main document's own status is reported by the health checks, so skip it here.
     const isMainDoc = req.isNavigationRequest() && req.frame() === page.mainFrame();
+    // 429/503 + Retry-After = the host throttling the monitor (WP Engine/Cloudflare do this to fast crawlers),
+    // not a broken resource. Tracked separately and excluded from error checks.
+    if ((r.status() === 429 || (r.status() === 503 && r.headers()['retry-after'])) && !isMainDoc) {
+      data.rateLimited.push(r.url());
+      return;
+    }
     if (r.status() >= 400 && !isMainDoc) {
       data.failedRequests.push({ url: r.url(), status: r.status(), resourceType: r.request().resourceType() });
     }
@@ -155,17 +165,27 @@ export async function loadPage(browser: Browser, site: SiteConfig, url: string, 
         links,
         brokenImages,
         hasDataLayer: Array.isArray((window as unknown as { dataLayer?: unknown }).dataLayer),
+        robots: Array.from(document.querySelectorAll('meta[name="robots"], meta[name="googlebot"]')).map((m) => m.getAttribute('content') ?? '').join(','),
         title: document.title.trim(),
         description: document.querySelector('meta[name="description"]')?.getAttribute('content')?.trim() ?? '',
+        canonical: (document.querySelector('link[rel="canonical"]') as HTMLLinkElement | null)?.href ?? '',
       };
     });
     data.ttfbMs = evald.ttfb;
     data.text = evald.text;
     data.links = [...new Set(evald.links)];
-    data.brokenImages = [...new Set(evald.brokenImages)];
     data.hasDataLayer = evald.hasDataLayer;
+    data.noindex = /noindex/i.test(evald.robots) || /noindex/i.test(data.headers['x-robots-tag'] ?? '');
+    data.host = data.headers['x-powered-by'] ?? data.headers['server'] ?? '';
+    // Anything the host throttled isn't "broken": drop those images and the console errors they caused
+    // (a throttled script comes back as an HTML error page → "Refused to execute script … MIME type text/html").
+    const throttled = new Set(data.rateLimited.map((u) => u.split('#')[0]));
+    data.brokenImages = [...new Set(evald.brokenImages)].filter((u) => !throttled.has(u.split('#')[0]));
+    data.consoleErrors = data.consoleErrors.filter((e) =>
+      !(e.includes('429') || [...throttled].some((u) => e.includes(u.split('?')[0]))));
     data.title = evald.title;
     data.description = evald.description;
+    data.canonical = evald.canonical;
     data.html = await page.content();
     data.gtmInHtml = [...new Set(data.html.match(/GTM-[A-Z0-9]{4,10}/g) ?? [])];
     measuringWeight = false; // resizing below loads other image sizes; weight = initial desktop load

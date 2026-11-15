@@ -104,3 +104,32 @@ export async function finishRun(runId: string, report: SiteReport, diff?: Diff):
 export async function failRun(runId: string, message: string): Promise<void> {
   await db().from('runs').update({ status: 'error', error: message, finished_at: new Date().toISOString() }).eq('id', runId);
 }
+
+/**
+ * Saves detected tag IDs as the site's expected tracking, only if it has none configured yet.
+ * Re-reads the row so a concurrent settings change in the dashboard is never overwritten.
+ */
+export async function adoptTracking(siteId: string, found: import('./checks/tracking.js').DetectedTracking): Promise<string[] | undefined> {
+  const { data: row, error } = await db().from('sites').select('config').eq('id', siteId).single();
+  if (error || !row) return undefined;
+  const config = row.config as Partial<SiteConfig>;
+  const t = config.tracking;
+  if (t && (t.gtm?.length || t.ga4?.length || t.metaPixel?.length || t.callrail || t.custom?.length)) return undefined;
+  const tracking = {
+    ...(t ?? {}),
+    ...(found.gtm.length ? { gtm: found.gtm } : {}),
+    ...(found.ga4.length ? { ga4: found.ga4 } : {}),
+    ...(found.metaPixel.length ? { metaPixel: found.metaPixel } : {}),
+    ...(found.callrailCompanyId ? { callrail: { companyId: found.callrailCompanyId } } : {}),
+  };
+  const saved = [
+    ...found.gtm.map((x) => `GTM ${x}`), ...found.ga4.map((x) => `GA4 ${x}`),
+    ...found.metaPixel.map((x) => `Meta ${x}`), ...(found.callrailCompanyId ? [`CallRail ${found.callrailCompanyId}`] : []),
+  ];
+  if (!saved.length) return undefined;
+  await db().from('sites').update({
+    config: { ...config, tracking, trackingAdoptedAt: new Date().toISOString() },
+    updated_at: new Date().toISOString(),
+  }).eq('id', siteId);
+  return saved;
+}

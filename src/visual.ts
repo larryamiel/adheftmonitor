@@ -98,7 +98,9 @@ export async function visualChecks(site: SiteConfig, p: PageData, store: ImageSt
   const out: CheckResult[] = [];
   const threshold = site.visual?.threshold ?? 0.5;
   for (const shot of p.screenshots) {
-    const base = `${site.name}/${slug(p.path)}/${shot.width}`;
+    // Fonts render differently per OS: GitHub (Linux) baselines live in "375", a Windows run in "375-win32",
+    // so a local run never compares against (or overwrites) the scheduled runs' baselines.
+    const base = `${site.name}/${slug(p.path)}/${shot.width}${process.platform === 'linux' ? '' : `-${process.platform}`}`;
     const id = `diff-${shot.width}`;
     try {
       const prevBuf = approve ? undefined : await store.get(`${base}/baseline.png`);

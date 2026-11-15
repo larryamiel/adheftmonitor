@@ -14,6 +14,8 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 
 export interface SiteConfig {
   label?: string;
+  /** When tracking IDs were auto-saved from a run. Cleared once you save settings yourself. */
+  trackingAdoptedAt?: string;
   pages?: string[];
   keyPages?: string[];
   crawl?: { sitemap?: boolean; followLinks?: boolean; maxPages?: number; concurrency?: number; includeQuery?: boolean; exclude?: string[] };
