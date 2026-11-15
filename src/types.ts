@@ -42,6 +42,8 @@ export interface TrackingConfig {
 export interface SiteConfig {
   /** Short unique name used on the CLI: --site <name>. */
   name: string;
+  /** Human-friendly name shown in the dashboard, e.g. "VIP Animal Hospital / Fullerton". */
+  label?: string;
   /** Canonical origin, e.g. "https://www.example.com". */
   baseUrl: string;
   /** Paths always checked. Default ["/"]. */

@@ -22,7 +22,7 @@ export default async function EditSite({ params, searchParams }: {
       <main className="container stack">
         <div className="page-head">
           <div>
-            <p className="small" style={{ margin: 0 }}><Link href={`/sites/${site.name}`}>← {site.name}</Link></p>
+            <p className="small" style={{ margin: 0 }}><Link href={`/sites/${site.name}`}>← {site.config.label ?? site.name}</Link></p>
             <h1>Settings</h1>
           </div>
         </div>

@@ -34,7 +34,7 @@ export default async function SitePage({ params, searchParams }: {
         <div className="page-head">
           <div>
             <div className="row">
-              <h1>{site.name}</h1>
+              <h1>{site.config.label ?? site.name}</h1>
               {!site.enabled && <Pill status="muted">Paused</Pill>}
               {running && <Pill status="running">Running since {timeAgo(running.started_at)}</Pill>}
             </div>

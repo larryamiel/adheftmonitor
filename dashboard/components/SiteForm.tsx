@@ -22,6 +22,11 @@ export function SiteForm({ site }: { site?: SiteRow }) {
         <legend>Site</legend>
         <div className="form-grid">
           <label className="field">
+            Display name
+            <span className="hint">Shown in the dashboard, e.g. “VIP Animal Hospital / Fullerton”</span>
+            <input type="text" name="label" defaultValue={c.label} placeholder="Acme Plumbing" />
+          </label>
+          <label className="field">
             Short name
             <span className="hint">Lowercase, dashes. Used in URLs and the CLI. Can’t be changed later.</span>
             <input type="text" name="name" defaultValue={site?.name} readOnly={!!site} required pattern="[a-z0-9][a-z0-9\-]*" placeholder="acme-plumbing" />

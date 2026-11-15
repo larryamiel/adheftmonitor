@@ -48,7 +48,7 @@ export default async function Overview() {
             <Link key={site.id} href={`/sites/${site.name}`} className="card site-card">
               <div className="row" style={{ alignItems: 'flex-start' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <h2>{site.name}</h2>
+                  <h2>{site.config.label ?? site.name}</h2>
                   <div className="url">{site.base_url}</div>
                 </div>
                 <Score value={latest?.scores?.overall} className="big-score" />

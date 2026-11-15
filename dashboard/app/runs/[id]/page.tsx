@@ -21,7 +21,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
       <main className="container stack">
         <div className="page-head">
           <div>
-            <p className="small" style={{ margin: 0 }}><Link href={`/sites/${site?.name}`}>← {site?.name}</Link></p>
+            <p className="small" style={{ margin: 0 }}><Link href={`/sites/${site?.name}`}>← {site?.config.label ?? site?.name}</Link></p>
             <div className="row" style={{ marginTop: 4 }}>
               <h1>{run.kind === 'manual' ? 'Manual check' : run.kind === 'quick' ? 'Quick check (key pages)' : 'Full crawl'}</h1>
               <Pill status={run.status} />

@@ -85,7 +85,7 @@ async function main() {
           links: !values['no-links'] && kind !== 'quick',
           responsive: !values['no-responsive'],
           a11y: !values['no-a11y'],
-          visual: !values['no-visual'],
+          visual: !values['no-visual'] && kind !== 'quick', // screenshots: daily full crawl + manual checks only
           psi: values['no-psi'] ? false : undefined, // default: on only when PSI_API_KEY is set
           approve: values.approve,
           onProgress: (m) => !PRIVATE && process.stdout.isTTY && process.stdout.write(`\r\x1b[K${pc.dim(`[${site.name}] ${m}`)}`),

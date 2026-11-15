@@ -55,6 +55,7 @@ export function parseSiteForm(f: FormData): { name: string; baseUrl: string; ena
   const threshold = Number(f.get('threshold'));
 
   const config: SiteConfig = prune({
+    label: str(f.get('label')),
     pages: list(f.get('pages')).map(path),
     keyPages: list(f.get('keyPages')).map(path),
     crawl: {

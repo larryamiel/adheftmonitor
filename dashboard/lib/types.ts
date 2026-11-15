@@ -13,6 +13,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
 };
 
 export interface SiteConfig {
+  label?: string;
   pages?: string[];
   keyPages?: string[];
   crawl?: { sitemap?: boolean; followLinks?: boolean; maxPages?: number; concurrency?: number; includeQuery?: boolean; exclude?: string[] };
