@@ -1,0 +1,81 @@
+name: QA
+
+on:
+  schedule:
+    - cron: '0 */2 * * *' # every 2 hours (UTC). GitHub may delay scheduled runs by a few minutes.
+  workflow_dispatch: # "Run workflow" button in GitHub, and the dashboard's "Run QA now"
+    inputs:
+      site:
+        description: 'Site name(s), comma-separated, or "all"'
+        default: all
+      pages:
+        description: 'Optional: only these paths, e.g. /,/contact (manual check, no crawl)'
+        default: ''
+      links:
+        description: 'Check links'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      sites: ${{ steps.m.outputs.sites }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - id: m
+        run: echo "sites=$(npm run -s sites -- matrix "$SITE_INPUT")" >> "$GITHUB_OUTPUT"
+        env:
+          SITE_INPUT: ${{ inputs.site || 'all' }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+  qa:
+    needs: plan
+    if: needs.plan.outputs.sites != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false # one failing site must not cancel the others
+      max-parallel: 10
+      matrix:
+        site: ${{ fromJson(needs.plan.outputs.sites) }}
+    # Never run two QA passes of the same site at once (big sites can take > 2h).
+    concurrency:
+      group: qa-${{ matrix.site }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Cache Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install --with-deps chromium
+      - name: Run QA
+        # Inputs go through env vars, never interpolated into the script (prevents shell injection).
+        run: |
+          ARGS=(--site "$SITE" --trigger "$TRIGGER")
+          if [ -n "$PAGES" ]; then ARGS+=(--pages "$PAGES"); fi
+          if [ "$LINKS" = "false" ]; then ARGS+=(--no-links); fi
+          npm run qa -- "${ARGS[@]}"
+        env:
+          SITE: ${{ matrix.site }}
+          TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
+          PAGES: ${{ inputs.pages }}
+          LINKS: ${{ inputs.links }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FORCE_COLOR: '1'
