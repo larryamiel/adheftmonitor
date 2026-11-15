@@ -48,6 +48,8 @@ export interface RunRow {
   id: string;
   site_id: string;
   trigger: string;
+  /** full = every page (daily) · quick = key pages (every 2h) · manual = pages you chose */
+  kind: 'full' | 'quick' | 'manual';
   partial: boolean;
   status: 'running' | 'passed' | 'failed' | 'error';
   started_at: string;

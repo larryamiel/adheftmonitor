@@ -14,7 +14,7 @@ export function db(): SupabaseClient {
   return client;
 }
 
-const RUN_COLS = 'id,site_id,trigger,partial,status,started_at,finished_at,duration_ms,pages,scores,viewport_scores,counts,new_issues,fixed,error';
+const RUN_COLS = 'id,site_id,trigger,kind,partial,status,started_at,finished_at,duration_ms,pages,scores,viewport_scores,counts,new_issues,fixed,error';
 
 export async function getSites(): Promise<SiteRow[]> {
   const { data, error } = await db().from('sites').select('*').order('name');

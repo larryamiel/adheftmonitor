@@ -38,18 +38,27 @@ export async function upsertSite(site: SiteConfig): Promise<void> {
   if (error) throw new Error(`Saving site ${name}: ${error.message}`);
 }
 
-export async function startRun(siteId: string, trigger: string, partial: boolean): Promise<string> {
-  const { data, error } = await db().from('runs').insert({ site_id: siteId, trigger, partial }).select('id').single();
+export type RunKind = 'full' | 'quick' | 'manual';
+
+export async function startRun(siteId: string, trigger: string, kind: RunKind): Promise<string> {
+  const { data, error } = await db().from('runs')
+    .insert({ site_id: siteId, trigger, kind, partial: kind !== 'full' }).select('id').single();
   if (error) throw new Error(`Creating run: ${error.message}`);
   return data.id;
 }
 
-/** Previous finished run, rebuilt as a SiteReport (non-pass results only) for diffing. */
-export async function previousReport(siteId: string, excludeRunId: string): Promise<SiteReport | undefined> {
-  const { data: run } = await db().from('runs')
+/**
+ * Baseline for the diff, rebuilt as a SiteReport (non-pass results only):
+ * full → previous full; quick → previous quick (so alerts don't repeat every 2h), else last full;
+ * manual → last full.
+ */
+export async function previousReport(siteId: string, excludeRunId: string, kind: RunKind): Promise<SiteReport | undefined> {
+  const find = (k: RunKind) => db().from('runs')
     .select('id,started_at,duration_ms,pages,scores')
-    .eq('site_id', siteId).eq('partial', false).in('status', ['passed', 'failed']).neq('id', excludeRunId)
+    .eq('site_id', siteId).eq('kind', k).in('status', ['passed', 'failed']).neq('id', excludeRunId)
     .order('started_at', { ascending: false }).limit(1).maybeSingle();
+  let { data: run } = await find(kind === 'manual' ? 'full' : kind);
+  if (!run && kind === 'quick') ({ data: run } = await find('full'));
   if (!run) return undefined;
   const results: CheckResult[] = [];
   for (let from = 0; ; from += 1000) {
@@ -89,7 +98,7 @@ export async function finishRun(runId: string, report: SiteReport, diff?: Diff):
     fixed: diff?.fixed.map(slim) ?? [],
   }).eq('id', runId);
   if (error) throw new Error(`Finishing run: ${error.message}`);
-  await db().rpc('prune_old_results', { keep_days: 30 });
+  await db().rpc('prune_old_results', { keep_days: 14 });
 }
 
 export async function failRun(runId: string, message: string): Promise<void> {

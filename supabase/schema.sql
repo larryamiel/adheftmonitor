@@ -32,10 +32,12 @@ create table if not exists runs (
   error        text
 );
 alter table runs add column if not exists partial boolean not null default false;
-alter table runs add column if not exists viewport_scores jsonb;  -- {"320":81,"1920":100}
+alter table runs add column if not exists viewport_scores jsonb;
+-- full = every page (daily) · quick = key pages (every 2h) · manual = --pages check
+alter table runs add column if not exists kind text not null default 'full';  -- {"320":81,"1920":100}
 create index if not exists runs_site_started on runs (site_id, started_at desc);
 
--- Non-passing results only (passes are counted in runs.counts). Pruned after 30 days.
+-- Non-passing results only (passes are counted in runs.counts). Pruned after 14 days.
 create table if not exists results (
   id        bigserial primary key,
   run_id    uuid not null references runs(id) on delete cascade,
@@ -54,7 +56,7 @@ alter table runs    enable row level security;
 alter table results enable row level security;
 
 -- Housekeeping, called at the end of each run.
-create or replace function prune_old_results(keep_days int default 30) returns void
+create or replace function prune_old_results(keep_days int default 14) returns void
 language sql security definer as $$
   delete from results r using runs u
   where r.run_id = u.id and u.started_at < now() - make_interval(days => keep_days);

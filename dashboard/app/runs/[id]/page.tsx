@@ -23,7 +23,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
           <div>
             <p className="small" style={{ margin: 0 }}><Link href={`/sites/${site?.name}`}>← {site?.name}</Link></p>
             <div className="row" style={{ marginTop: 4 }}>
-              <h1>{run.partial ? 'Manual check' : 'Full QA run'}</h1>
+              <h1>{run.kind === 'manual' ? 'Manual check' : run.kind === 'quick' ? 'Quick check (key pages)' : 'Full crawl'}</h1>
               <Pill status={run.status} />
             </div>
             <p>{new Date(run.started_at).toLocaleString()} · {run.trigger} · {run.pages.length} pages · {duration(run.duration_ms)}</p>
@@ -39,7 +39,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
 
         {(run.new_issues?.length || run.fixed?.length) ? (
           <div className="card">
-            <div className="card-head"><h2>{run.partial ? 'Compared with the last full run' : 'Changes since the previous run'}</h2></div>
+            <div className="card-head"><h2>{run.kind === 'manual' ? 'Compared with the last full crawl' : run.kind === 'quick' ? 'Changes since the previous quick check' : 'Changes since the previous full crawl'}</h2></div>
             <div className="card-pad stack" style={{ gap: 6 }}>
               {run.new_issues?.map((x, i) => (
                 <div key={`n${i}`}><Pill status="fail">New</Pill> <Pill status={x.status} /> {x.page && <code>{x.page}</code>} {x.message}</div>

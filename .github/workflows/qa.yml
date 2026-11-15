@@ -1,18 +1,27 @@
 name: QA
 
+# This repo is public, so these logs are public. Jobs use anonymous site IDs and QA_PRIVATE_LOGS=1
+# prints only one-line summaries. All findings live in the private dashboard / database.
+
 on:
   schedule:
-    - cron: '0 */2 * * *' # every 2 hours (UTC). GitHub may delay scheduled runs by a few minutes.
-  workflow_dispatch: # "Run workflow" button in GitHub, and the dashboard's "Run QA now"
+    - cron: '0 */2 * * *'  # quick: key pages of every site, every 2 hours (UTC)
+    - cron: '30 7 * * *'   # full: every page + links, daily at 07:30 UTC
+  workflow_dispatch: # "Run workflow" in GitHub, and the dashboard's Run QA buttons
     inputs:
       site:
-        description: 'Site name(s), comma-separated, or "all"'
+        description: 'Site name(s) or ID(s), comma-separated, or "all"'
         default: all
+      mode:
+        description: 'full = every page, quick = key pages'
+        type: choice
+        options: [full, quick]
+        default: full
       pages:
-        description: 'Optional: only these paths, e.g. /,/contact (manual check, no crawl)'
+        description: 'Optional manual check: only these paths, e.g. /,/contact'
         default: ''
       links:
-        description: 'Check links'
+        description: 'Check links (full runs)'
         type: boolean
         default: true
 
@@ -22,19 +31,40 @@ permissions:
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write # keepalive below
     outputs:
       sites: ${{ steps.m.outputs.sites }}
+      mode: ${{ steps.mode.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - id: mode
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            if [ "$SCHEDULE" = "30 7 * * *" ]; then echo "mode=full" >> "$GITHUB_OUTPUT"; else echo "mode=quick" >> "$GITHUB_OUTPUT"; fi
+          else
+            echo "mode=${MODE:-full}" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          MODE: ${{ inputs.mode }}
       - id: m
         run: echo "sites=$(npm run -s sites -- matrix "$SITE_INPUT")" >> "$GITHUB_OUTPUT"
         env:
           SITE_INPUT: ${{ inputs.site || 'all' }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # GitHub disables schedules in public repos after 60 days without commits; re-enabling resets that.
+      - name: Keep schedule alive
+        if: github.event_name == 'schedule'
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/qa.yml/enable" || true
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   qa:
     needs: plan
@@ -42,11 +72,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
-      fail-fast: false # one failing site must not cancel the others
+      fail-fast: false # one site must not cancel the others
       max-parallel: 10
       matrix:
         site: ${{ fromJson(needs.plan.outputs.sites) }}
-    # Never run two QA passes of the same site at once (big sites can take > 2h).
+    # One QA pass per site at a time (a long full crawl delays, never overlaps, the next quick check).
     concurrency:
       group: qa-${{ matrix.site }}
       cancel-in-progress: false
@@ -65,17 +95,19 @@ jobs:
         # Inputs go through env vars, never interpolated into the script (prevents shell injection).
         run: |
           ARGS=(--site "$SITE" --trigger "$TRIGGER")
-          if [ -n "$PAGES" ]; then ARGS+=(--pages "$PAGES"); fi
+          if [ -n "$PAGES" ]; then ARGS+=(--pages "$PAGES");
+          elif [ "$MODE" = "quick" ]; then ARGS+=(--quick); fi
           if [ "$LINKS" = "false" ]; then ARGS+=(--no-links); fi
-          npm run qa -- "${ARGS[@]}"
+          npm run -s qa -- "${ARGS[@]}"
         env:
           SITE: ${{ matrix.site }}
+          MODE: ${{ needs.plan.outputs.mode }}
           TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || 'manual' }}
           PAGES: ${{ inputs.pages }}
           LINKS: ${{ inputs.links }}
+          QA_PRIVATE_LOGS: '1'
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
           PSI_API_KEY: ${{ secrets.PSI_API_KEY }}
           GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          FORCE_COLOR: '1'

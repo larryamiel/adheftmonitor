@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { SESSION_COOKIE, SESSION_DAYS, createSession, safeEqual, verifySession } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { db, getSite } from '@/lib/db';
 import { dispatchQa } from '@/lib/github';
 import { parseSiteForm } from '@/lib/siteForm';
 import { approveShot, deleteSiteShots } from '@/lib/storage';
@@ -87,8 +87,10 @@ export async function runNow(_: ActionState, form: FormData): Promise<ActionStat
     .map((p) => { try { return new URL(p).pathname; } catch { return p.startsWith('/') ? p : `/${p}`; } })
     .join(',');
   if (pages && !/^[\w\-./,%~]+$/.test(pages)) return { error: 'Pages contain unsupported characters.' };
+  const row = await getSite(site);
+  if (!row) return { error: 'Site not found.' };
   try {
-    await dispatchQa({ site, pages, links: form.get('links') !== 'off' });
+    await dispatchQa({ site: row.id, pages, links: form.get('links') !== 'off' });
   } catch (e) {
     return { error: (e as Error).message };
   }

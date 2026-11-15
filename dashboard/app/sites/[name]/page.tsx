@@ -19,10 +19,11 @@ export default async function SitePage({ params, searchParams }: {
   if (!site) notFound();
   const runs = await getSiteRuns(site.id);
   const finished = runs.filter((r) => r.status === 'passed' || r.status === 'failed');
-  const latest = finished.find((r) => !r.partial);
+  const latest = finished.find((r) => r.kind === 'full');
+  const quick = finished.find((r) => r.kind === 'quick');
   const running = runs.find((r) => r.status === 'running');
   const results = latest ? await getRunResults(latest.id) : [];
-  const trend = finished.filter((r) => !r.partial).slice(0, 60).reverse()
+  const trend = finished.filter((r) => r.kind === 'full').slice(0, 60).reverse()
     .map((r) => ({ at: r.started_at, score: r.scores?.overall ?? 0 }));
 
   return (
@@ -51,6 +52,12 @@ export default async function SitePage({ params, searchParams }: {
           <RunControls site={site.name} enabled={site.enabled} githubReady={githubConfigured()} />
         </div>
 
+        {quick && (!latest || quick.started_at > latest.started_at) && (
+          <div className={`alert ${quick.status === 'failed' ? 'alert-error' : 'alert-ok'}`}>
+            Latest quick check ({quick.pages.length} key page{quick.pages.length === 1 ? '' : 's'}, {timeAgo(quick.finished_at)}): <strong>{quick.status === 'failed' ? `${quick.counts?.fail ?? 0} failure(s)` : 'all good'}</strong>
+            {quick.new_issues?.length ? ` · ${quick.new_issues.length} new since the previous quick check` : ''} · <Link href={`/runs/${quick.id}`}>details</Link>
+          </div>
+        )}
         {created && <div className="alert alert-ok">Site added. It will be checked on the next scheduled run, or click “Run full QA” now.</div>}
 
         {!latest ? (
@@ -61,7 +68,7 @@ export default async function SitePage({ params, searchParams }: {
               <div className="card card-pad stack">
                 <div className="row">
                   <div>
-                    <div className="muted small">Overall score · last full run {timeAgo(latest.finished_at)}</div>
+                    <div className="muted small">Overall score · last full crawl {timeAgo(latest.finished_at)}</div>
                     <Score value={latest.scores?.overall} className="big-score" />
                   </div>
                   <span className="spacer" />
@@ -118,7 +125,7 @@ export default async function SitePage({ params, searchParams }: {
                   <tr key={r.id}>
                     <td><Link href={`/runs/${r.id}`}>{new Date(r.started_at).toLocaleString()}</Link></td>
                     <td><Pill status={r.status} /></td>
-                    <td className="muted">{r.partial ? 'manual check' : r.trigger}</td>
+                    <td className="muted">{r.kind === 'manual' ? 'manual check' : r.kind === 'quick' ? 'quick (key pages)' : 'full crawl'}{r.trigger === 'manual' && r.kind !== 'manual' ? ' · run now' : ''}</td>
                     <td>{r.pages.length || '–'}</td>
                     <td><Score value={r.scores?.overall} /></td>
                     <td className="muted">{duration(r.duration_ms)}</td>

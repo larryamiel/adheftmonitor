@@ -11,7 +11,7 @@ Manage monitored sites in the database (the dashboard will do this later).
   npm run sites -- enable|disable <name>
   npm run sites -- remove <name>                  deletes the site AND its run history
   npm run sites -- import [sites.config.ts]       upsert every site from a config file
-  npm run sites -- matrix                         JSON list of enabled site names (used by GitHub Actions)
+  npm run sites -- matrix [names|ids|all]         JSON list of site IDs (used by GitHub Actions)
 `;
 
 async function main() {
@@ -61,9 +61,11 @@ async function main() {
       break;
     }
     case 'matrix': {
-      const only = a && a !== 'all' ? a.split(',') : undefined;
-      const names = (await loadSitesFromDb()).map((s) => s.name).filter((n) => !only || only.includes(n));
-      console.log(JSON.stringify(names));
+      // Prints site IDs (not names): job names and logs are public on a public repo.
+      // Accepts names or IDs; "all" = every enabled site. Explicitly named sites run even if paused.
+      const only = a && a !== 'all' ? a.split(',').map((s) => s.trim()) : undefined;
+      const sites = await loadSitesFromDb(!!only);
+      console.log(JSON.stringify(sites.filter((s) => !only || only.includes(s.name) || only.includes(s.id)).map((s) => s.id)));
       break;
     }
     default:

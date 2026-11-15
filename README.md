@@ -14,9 +14,14 @@ npx playwright install chromium
 3. Add sites: `npm run sites -- add mysite https://www.mysite.com` (every page is crawled by default).
 4. **GitHub**: push this repo (public is fine; no secrets are in the code). Settings → Secrets and variables → Actions → add
    `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and optionally `ALERT_WEBHOOK_URL` (Slack/Discord).
-5. Actions tab → **QA** → *Run workflow* once to test. After that it runs every 2 hours by itself.
+5. Actions tab → **QA** → *Run workflow* once to test. After that it runs by itself:
+   **quick check** of each site's key pages every 2 hours, **full crawl** of every page daily (07:30 UTC).
 
-> GitHub disables scheduled workflows in a repo with no commits for 60 days. If that happens, click "Enable workflow" in the Actions tab.
+**Public repo privacy:** Actions logs are public, so jobs use anonymous site IDs and print only
+`site 3f2a91c0 [quick]: score 84/100, 2 fail…`. Names, URLs and findings stay in the dashboard/database.
+Runs that *find* problems still succeed (no GitHub failure emails); you're notified through alerts.
+The workflow re-enables its own schedule, so GitHub's 60-day inactivity shutoff doesn't apply.
+
 
 ## Dashboard (Vercel, free Hobby plan)
 The `dashboard/` folder is a Next.js app: site overview with scores and trends, the full checklist per run,

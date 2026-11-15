@@ -14,10 +14,13 @@ export default async function Overview() {
 
   const summary = sites.map((s) => {
     const rs = bySite.get(s.id) ?? [];
-    const full = rs.filter((r) => !r.partial && (r.status === 'passed' || r.status === 'failed'));
-    return { site: s, latest: full[0], running: rs.find((r) => r.status === 'running'), trend: full.slice(0, 30).reverse().map((r) => r.scores?.overall ?? 0) };
+    const done = rs.filter((r) => r.status === 'passed' || r.status === 'failed');
+    const full = done.filter((r) => r.kind === 'full');
+    const quick = done.find((r) => r.kind === 'quick');
+    return { site: s, latest: full[0], quick, running: rs.find((r) => r.status === 'running'), trend: full.slice(0, 30).reverse().map((r) => r.scores?.overall ?? 0) };
   });
-  const failing = summary.filter((x) => x.latest?.status === 'failed').length;
+  // A site is "failing" if its newest full or quick check failed.
+  const failing = summary.filter((x) => (x.quick && x.latest && x.quick.started_at > x.latest.started_at ? x.quick : x.latest)?.status === 'failed').length;
 
   return (
     <>
@@ -27,7 +30,7 @@ export default async function Overview() {
         <div className="page-head">
           <div>
             <h1>Sites</h1>
-            <p>{sites.length} site{sites.length === 1 ? '' : 's'} · {failing ? <span className="score-bad">{failing} failing</span> : 'all passing'} · checks run every 2 hours</p>
+            <p>{sites.length} site{sites.length === 1 ? '' : 's'} · {failing ? <span className="score-bad">{failing} failing</span> : 'all passing'} · quick check every 2 hours · full crawl daily</p>
           </div>
           <Link href="/sites/new" className="btn btn-primary">+ Add site</Link>
         </div>
@@ -41,7 +44,7 @@ export default async function Overview() {
         )}
 
         <div className="grid grid-2">
-          {summary.map(({ site, latest, running, trend }) => (
+          {summary.map(({ site, latest, quick, running, trend }) => (
             <Link key={site.id} href={`/sites/${site.name}`} className="card site-card">
               <div className="row" style={{ alignItems: 'flex-start' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
@@ -65,6 +68,12 @@ export default async function Overview() {
                       <Score value={latest.scores?.[c]} />
                     </div>
                   ))}
+                </div>
+              )}
+              {quick && (
+                <div className="small muted">
+                  Quick check {timeAgo(quick.finished_at ?? quick.started_at)}: <Pill status={quick.status} />
+                  {quick.new_issues && quick.new_issues.length > 0 && <span className="score-bad"> · {quick.new_issues.length} new issue{quick.new_issues.length > 1 ? 's' : ''}</span>}
                 </div>
               )}
               {latest?.new_issues && latest.new_issues.length > 0 && (
