@@ -41,8 +41,8 @@ const DEFAULT_EXCLUDE = new RegExp([
   String.raw`^/(wp-login\.php|wp-admin|wp-json|wp-content|wp-includes|xmlrpc\.php|cgi-bin)`,
   String.raw`/feed/?$`, String.raw`^/\d{4}/(\d{2}/)?(\d{2}/)?$`, String.raw`/page/\d+/?$`, String.raw`^/author/`,
   String.raw`/attachment/`,
-  // Page-builder/theme template libraries that leak into sitemaps (Avada/Fusion, Elementor, Divi, Beaver).
-  String.raw`^/(element_category|fusion_tb_category|fusion_tb_section|fusion_element|fusion_template|fusion_form|elementor_library|e-landing-page|et_pb_layout|layout_category|fl-builder-template)/`,
+  // Page-builder/theme template libraries that leak into sitemaps (Avada/Fusion, Elementor, Divi, Beaver, Flatsome).
+  String.raw`^/(element_category|fusion_tb_category|fusion_tb_section|fusion_element|fusion_template|fusion_form|elementor_library|e-landing-page|et_pb_layout|layout_category|fl-builder-template|blocks|featured_item)/`,
 ].join('|'));
 
 /** "/contact-us/" and "/contact-us" are the same page for key-page matching. */
